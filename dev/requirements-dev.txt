@@ -1,0 +1,5 @@
+# Dependencias extra SOLO para los scripts de diagnóstico de esta carpeta
+# (test_hid_report.py usa hidapi, test_pyusb.py usa pyusb).
+# No se instalan en la imagen de producción.
+hidapi==0.15.0
+pyusb==1.3.1

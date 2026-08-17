@@ -1,0 +1,53 @@
+name: WH1080 USB Weather Station
+version: "1.0.0"
+slug: wh1080_usb
+description: >-
+  Reads a Fine Offset WH1080 weather station directly over USB
+  using pywws and publishes the data via MQTT Discovery and
+  optionally Weather Underground.
+url: https://github.com/hydraroot/hawh1080addon
+startup: application
+boot: auto
+init: false
+arch:
+  - amd64
+  - aarch64
+devices:
+  - /dev/hidraw0
+  - /dev/bus/usb
+apparmor: false
+options:
+  device: /dev/hidraw0
+  units:
+    system: metric
+  mqtt:
+    enabled: true
+    host: core-mosquitto
+    port: 1883
+    username: ""
+    password: ""
+  weather_underground:
+    enabled: false
+    station_id: ""
+    station_key: ""
+    interval: 60
+  logging:
+    interval: 1
+schema:
+  device: device
+  units:
+    system: list(metric|imperial)
+  mqtt:
+    enabled: bool
+    host: str
+    port: port
+    username: str?
+    password: password?
+  weather_underground:
+    enabled: bool
+    station_id: str?
+    station_key: password?
+    interval: int(30,600)
+  logging:
+    interval: int(1,120)
+stage: experimental
