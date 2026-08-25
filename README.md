@@ -2,7 +2,7 @@
 
 Home Assistant App for reading a **Fine Offset WH1080** weather station and compatible models directly through USB.
 
-The App reads the weather station through `/dev/hidraw0`, uses **pywws** to communicate with and decode WH1080-family weather station data, publishes the readings to Home Assistant through **MQTT Discovery**, and optionally sends data to **Weather Underground**.
+The App reads the weather station through `/dev/hidraw0`, uses **pywws** to communicate with and decode WH1080-family weather station data, publishes the readings to Home Assistant through **MQTT Discovery**, and can optionally send data to **Weather Underground**.
 
 ## Overview
 
@@ -223,7 +223,7 @@ The WH1080 raw protocol uses the 16-position index. The App converts this repres
 
 This App is intended for **Home Assistant OS**.
 
-Home Assistant currently refers to these components as **Apps** (formerly Add-ons). Apps are installed through the Home Assistant Apps panel.
+Home Assistant currently refers to these components as **Apps** (formerly Add-ons).
 
 ### Add the repository
 
@@ -241,8 +241,6 @@ https://github.com/hydraroot/hawh1080addon
 7. Refresh the App store if necessary.
 8. Select **WH1080 USB Weather Station**.
 9. Select **Install**.
-
-Home Assistant's official documentation describes the same process for third-party App repositories.
 
 ### Home Assistant OS requirement
 
@@ -307,7 +305,9 @@ The WH1080 accumulated rainfall counter is not currently sent as an instantaneou
 
 This project uses **pywws**, an open-source Python software package for USB wireless weather stations.
 
-`pywws` provides functionality for communicating with and decoding data from Fine Offset / WH1080-family weather stations. The project is maintained separately from this Home Assistant App.
+`pywws` provides functionality for communicating with and decoding data from Fine Offset / WH1080-family weather stations. It is installed as a third-party dependency and is maintained separately from this Home Assistant App.
+
+The dependency is specified in `requirements.txt`.
 
 **pywws project:**
 
@@ -328,23 +328,22 @@ This project adds the Home Assistant integration layer around the weather-statio
 - Daily maximum/minimum handling
 - Optional Weather Underground integration
 
-Please refer to the pywws project and its license for the terms applicable to that third-party software.
+Third-party software remains subject to its respective license terms.
 
 ## Repository structure
 
-The repository is organized as a Home Assistant App repository.
+This repository contains a single Home Assistant App.
 
 ```text
 hawh1080addon/
 ├── repository.yaml
-├── wh1080_usb/
-│   ├── config.yaml
-│   ├── Dockerfile
-│   ├── run.sh
-│   ├── wh1080.py
-│   ├── pywws_direct.py
-│   ├── direct_backend.py
-│   └── ...
+├── config.yaml
+├── Dockerfile
+├── run.sh
+├── wh1080.py
+├── pywws_direct.py
+├── direct_backend.py
+├── requirements.txt
 ├── dev/
 │   ├── requirements-dev.txt
 │   └── test_*.py
@@ -352,9 +351,9 @@ hawh1080addon/
 └── README.md
 ```
 
-The `wh1080_usb/` directory contains the Home Assistant App itself.
+The files in the repository root are part of the WH1080 App.
 
-The `dev/` directory contains development and diagnostic material used during development and testing.
+The `dev/` directory contains development and diagnostic material used during development and testing. These files are not required for normal operation of the App.
 
 ## Development notes
 
@@ -362,14 +361,12 @@ The project includes a direct USB backend designed to communicate with the WH108
 
 The development material includes diagnostic tools and experiments used to investigate the WH1080 USB/HID protocol.
 
-These development files are not required for normal App operation.
-
 ## Configuration version
 
 The Home Assistant App version is defined in:
 
 ```text
-wh1080_usb/config.yaml
+config.yaml
 ```
 
 For a new release, update the `version` field in that file.
@@ -380,7 +377,21 @@ Example:
 version: "1.0.1"
 ```
 
-Home Assistant App repositories store each App in its own directory, with the App's `config.yaml` inside that directory.
+## Dependencies
+
+Runtime dependencies are listed in:
+
+```text
+requirements.txt
+```
+
+The project currently uses:
+
+- `pywws`
+- `paho-mqtt`
+- `requests`
+
+Third-party dependencies are installed separately and remain subject to their respective licenses.
 
 ## Limitations
 
@@ -406,12 +417,12 @@ When reporting a problem, please include:
 
 ## Acknowledgements
 
-Thanks to the developers and contributors of **pywws** for their work on supporting Fine Offset and compatible USB weather stations.
+Thanks to the developers and contributors of **pywws** for their work supporting Fine Offset and compatible weather stations.
 
 ## License
 
-The repository contains third-party software components with their own licensing terms.
+The original code developed for this project is released under the **MIT License**.
 
-In particular, **pywws is licensed under GPLv2 or later (GPLv2+)**.
+Third-party software and dependencies remain subject to their respective licenses.
 
-See the repository's `LICENSE` file and the pywws license for the applicable terms.
+See the `LICENSE` file for the MIT License applying to the original project code.
