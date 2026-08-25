@@ -1,238 +1,417 @@
 # WH1080 USB Weather Station for Home Assistant
 
-**Author:** Walter Diego Spaltro ([@hydraroot](https://github.com/hydraroot))
-**Repository:** [github.com/hydraroot/hawh1080addon](https://github.com/hydraroot/hawh1080addon)
+Home Assistant App for reading a **Fine Offset WH1080** weather station and compatible models directly through USB.
 
-Home Assistant add-on to read a Fine Offset WH1080 weather station
-(and compatibles: WH1081, WH1090, WH1091, and several rebrands of the
-same chipset) directly over USB, without going through hidapi/libusb,
-using `pywws` over `/dev/hidraw0`. Publishes data via MQTT Discovery
-(automatic sensors in Home Assistant) and optionally to Weather
-Underground.
+The App reads the weather station through `/dev/hidraw0`, uses **pywws** to communicate with and decode WH1080-family weather station data, publishes the readings to Home Assistant through **MQTT Discovery**, and optionally sends data to **Weather Underground**.
 
-Reads a Fine Offset WH1080 directly over USB from Home Assistant OS.
+## Overview
+
+This project was developed to provide a simple way to connect a WH1080 weather station directly to a machine running **Home Assistant OS** through USB.
+
+The intended setup is:
+
+**WH1080 console → USB → Home Assistant OS → MQTT Discovery**
+
+No SDR receiver or additional Raspberry Pi is required for this setup.
 
 ## Features
 
-- USB HID `/dev/hidraw0`
-- pywws 25.10.0
+- Direct USB HID access through `/dev/hidraw0`
+- Fine Offset WH1080 support
+- Compatible WH1080-family stations
 - MQTT Discovery
-- Automatic sensors in Home Assistant
+- Automatic Home Assistant entities
 - Automatic reconnection
-- Optional Weather Underground
+- Metric and Imperial units
+- Outdoor and indoor measurements
+- Wind measurements
+- Rain measurements
+- Daily maximum/minimum values
+- Data validation against physically impossible readings
+- Connection/availability status
+- Optional Weather Underground integration
 
-## Published sensors
+## Supported hardware
 
-Temperature (indoor/outdoor), humidity (indoor/outdoor), pressure,
-wind (speed, gust, direction in degrees and text), dew point, wind
-chill, total rain (station's accumulated counter), **rain intensity**
-and **rain accumulated today**, plus the day's max/min values with
-their timestamp (including min/max humidity time).
+The project has been tested with:
 
-> `rain` is the accumulated counter that never resets on its own
-> (that's how the WH1080 delivers it). `rain_today` is calculated
-> using the first reading of each day as a baseline, and `rain_rate`
-> is estimated by comparing each reading against the previous one.
+- **Fine Offset WH1080**
 
-## Units (Metric / Imperial)
+The following models are intended to be compatible, but additional testing is welcome:
 
-In the add-on's configuration tab (next to MQTT and Weather
-Underground) there's a `units.system` selector:
+- WH1081
+- WH1090
+- WH1091
+- Other Fine Offset or rebranded stations using the same USB protocol
+
+If you test another compatible model, please report the exact model and whether it works correctly.
+
+## Sensors
+
+The App publishes the following information to Home Assistant:
+
+- Outdoor temperature
+- Outdoor humidity
+- Indoor temperature
+- Indoor humidity
+- Atmospheric pressure
+- Wind speed
+- Wind gust
+- Maximum wind gust
+- Wind direction in degrees
+- Wind direction as compass text
+- Dew point
+- Wind chill
+- Total accumulated rainfall
+- Rainfall accumulated today
+- Estimated rain intensity
+- Daily maximum and minimum values
+- Timestamps for daily maximum/minimum values
+- Connection/availability status
+
+## Rain measurements
+
+The WH1080 provides an accumulated rainfall counter.
+
+This project uses the following values:
+
+- `rain`: the accumulated rainfall counter supplied by the station.
+- `rain_today`: calculated from the first valid reading of the day.
+- `rain_rate`: estimated by comparing consecutive rainfall readings.
+
+The accumulated rainfall counter is not artificially limited.
+
+A corrupted one-off reading can produce an unrealistic rain-rate value. Such an isolated `rain_rate` spike is discarded when it exceeds approximately **500 mm/h**.
+
+## Units
+
+The App supports Metric and Imperial units.
+
+Example configuration:
 
 ```yaml
 units:
-  system: metric   # or "imperial"
+  system: metric
 ```
 
-- `metric`: °C, hPa, km/h, mm
-- `imperial`: °F, inHg, mph, in
+or:
 
-It affects **all** the sensors shown in Home Assistant (temperature,
-pressure, wind, rain, dew point, wind chill, and the day's
-max/min values). Changing it requires **restarting the add-on** for
-it to take effect (Home Assistant restarts the container when you
-save the configuration, so saving and waiting for the restart is
-enough).
+```yaml
+units:
+  system: imperial
+```
 
-Uploads to **Weather Underground are always sent in imperial units**,
-regardless of what you choose here, because that's what its API
-requires — nothing needs to be changed for that.
+### Metric
 
-> Note: the day's max/min values (`max_wind`, `min_temp_out`, etc.)
-> are already stored in the chosen unit. If you switch systems
-> **mid-day**, the comparison of those min/max values may look odd
-> until the next midnight (they reset every day at 00:00 local time).
-> It does not affect `rain`, `rain_today`, or real-time data.
+- Temperature: °C
+- Pressure: hPa
+- Wind: km/h
+- Rain: mm
+
+### Imperial
+
+- Temperature: °F
+- Pressure: inHg
+- Wind: mph
+- Rain: in
+
+The selected unit system affects the Home Assistant sensors, including:
+
+- Temperature
+- Pressure
+- Wind
+- Rain
+- Dew point
+- Wind chill
+- Daily maximum/minimum values
+
+After changing the unit system, save the App configuration and allow the App to restart.
+
+### Changing units during the day
+
+Daily maximum/minimum values are stored using the selected unit system.
+
+If the unit system is changed during the day, comparisons with previously stored values from that same day may temporarily appear inconsistent until the next daily reset.
+
+This does not affect real-time readings or the accumulated rainfall counter.
+
+Weather Underground uploads use the units required by its API independently of the Home Assistant unit selection.
 
 ## Update frequency
 
-There's no internal timer publishing "every N seconds": data is
-published to MQTT every time the WH1080 delivers a new reading from
-the outdoor sensor, and that's timed by the station's hardware (it
-syncs by RF with the sensor every ~43-48s — it's not something the
-add-on controls).
+The App does not use a fixed timer such as "publish every 10 seconds".
 
-`station.live_data()` (from `pywws`) synchronizes readings with the
-console's internal clock, just like Cumulus MX's **"Synchronise Reads
-and Writes"** option: it schedules each read right after the console
-updates its data, avoiding clashing with a write in progress.
+A new reading is published when the WH1080 console receives a new reading from the outdoor sensor.
 
-There's a configurable safety floor in `logging.interval` (seconds,
-default `1`) to avoid publishing more often than that — useful only
-if two readings ever arrive closer together than normal (for example
-right after reconnecting following an outage). With the default of
-`1`, in practice data is published to MQTT as soon as the station
-communicates, just like Cumulus MX does.
+The interval is controlled by the weather station hardware. In normal operation, the console typically receives a new outdoor reading approximately every **43–48 seconds**.
 
-In the logs you'll see a message like:
-```
+The App uses the `pywws` live-data mechanism to synchronize reads with the console's internal timing and avoid interfering with a write operation.
+
+There is also a configurable safety interval in the logging configuration to prevent readings from being processed more frequently than expected.
+
+Example log message:
+
+```text
 WH1080: new reading 47.2s after the previous one
 ```
-which confirms live how often your console is syncing.
 
-## Corrupt reading filter
+This can be used to verify the actual update interval of the connected station.
 
-The backend reads `/dev/hidraw0` directly (without the robust
-validation that pywws includes with the "normal" USB protocol), so
-every once in a while it can return a frame with garbage bytes. To
-keep that from ruining the day's max/min values, every reading is
-validated against a physically possible range before being stored:
+## Corrupt reading protection
+
+The direct `/dev/hidraw0` backend can occasionally receive an invalid or corrupted USB frame.
+
+To prevent an invalid frame from affecting stored daily maximum/minimum values, readings are checked against physically plausible limits before being accepted.
 
 | Field | Accepted range |
-|---|---|
-| Outdoor temperature | -40°C to 55°C |
-| Indoor temperature | -10°C to 55°C |
-| Humidity | 0% to 100% |
-| Pressure | 870 hPa to 1085 hPa |
-| Wind / gust | 0 to 250 km/h |
+|---|---:|
+| Outdoor temperature | -40 °C to 55 °C |
+| Indoor temperature | -10 °C to 55 °C |
+| Humidity | 0 % to 100 % |
+| Atmospheric pressure | 870 hPa to 1085 hPa |
+| Wind speed / gust | 0 to 250 km/h |
 | Wind direction | 0° to 360° |
 
-These are world-record ranges, not "typical for Buenos Aires": the
-idea is to discard only what's physically impossible (backend
-glitches), not to clip a real, strong event. If a reading falls
-outside the range, that specific reading is discarded (it stays as
-`None` for that cycle) and a warning is logged; it doesn't affect
-subsequent readings.
+These limits are intended to reject physically impossible values while still allowing extreme real-world weather events.
 
-**Rain**: here you have to be more careful, because a strong storm or
-a real flood *can* legitimately produce high values. That's why
-accumulated rain (`rain`, `rain_today`) is never clamped at all —
-only a one-off `rain_rate` spike is discarded if it implies an
-intensity above ~500 mm/h, well above the sustained world record
-(~300 mm/h), a value that can only come from a corrupt counter
-reading, not real rain.
+If a reading falls outside the accepted range, that reading is discarded for that cycle and a warning is written to the log.
 
-## Technical note: wind direction (`wind_dir`)
+Subsequent readings continue to be processed normally.
 
-The WH1080 (and its whole family: WH1081, WH1090, WH1091, rebrands)
-doesn't deliver wind direction in degrees directly: it delivers an
-**index from 0 to 15** representing one of the 16 points of the
-compass rose.
+Accumulated rainfall is handled separately because legitimate extreme rainfall can produce high accumulated values. The accumulated `rain` and `rain_today` values are therefore not clamped.
 
-```
-0  = N     4  = E     8  = S     12 = W
-1  = NNE   5  = ESE   9  = SSW   13 = WNW
-2  = NE    6  = SE    10 = SW    14 = NW
-3  = ENE   7  = SSE   11 = WSW   15 = NNW
-```
+## Wind direction
 
-To convert that index to degrees:
+The WH1080 family does not provide wind direction directly as a 0–360° value.
 
-```python
-degrees = wind_dir_index * 22.5
+The station provides a **16-position index from 0 to 15**:
+
+```text
+0  = N
+1  = NNE
+2  = NE
+3  = ENE
+4  = E
+5  = ESE
+6  = SE
+7  = SSE
+8  = S
+9  = SSW
+10 = SW
+11 = WSW
+12 = W
+13 = WNW
+14 = NW
+15 = NNW
 ```
 
-`pywws` already knows this format when decoding the data block; the
-important thing is not to treat that value as if it were already
-degrees in some intermediate layer (a common mistake when writing
-your own parsing/normalization).
+The conversion to degrees is:
 
-## Repo structure
-
-The GitHub repo root looks like this (this matters for Option A above
-— it's what the Supervisor expects from an add-on repository). In
-this repo, `config.yaml` lives directly at the repo root, so it's a
-**single-add-on repository**:
-
-```
-hawh1080addon/            # repo root = this repo
-├── repository.yaml       # repo metadata (name, url, maintainer)
-├── wh1080.py              # main loop + MQTT + discovery
-├── pywws_direct.py        # replaces pywws' USB backend
-├── direct_backend.py      # direct access to /dev/hidraw0
-├── Dockerfile
-├── run.sh
-├── config.yaml
-├── requirements.txt
-└── dev/                   # diagnostic scripts, NOT copied into the image
-    ├── requirements-dev.txt
-    └── test_*.py
+```text
+degrees = wind_direction_index × 22.5
 ```
 
-The scripts in `dev/` were used to reverse-engineer the WH1080's HID
-protocol (raw block reads, pyusb/hidapi tests, etc.). They're kept as
-reference but aren't part of the production add-on.
+For example:
+
+```text
+8 → 180° → S
+```
+
+The WH1080 raw protocol uses the 16-position index. The App converts this representation into degrees and compass text for Home Assistant.
 
 ## Installation
 
-### Option A — Add-on Store via GitHub (recommended)
+This App is intended for **Home Assistant OS**.
 
-Once this repo is on GitHub, Home Assistant can install it directly
-from there, without manually copying files onto the box:
+Home Assistant currently refers to these components as **Apps** (formerly Add-ons). Apps are installed through the Home Assistant Apps panel.
 
-1. In Home Assistant: **Settings → Add-ons → Add-on Store → ⋮ (top
-   right) → Repositories**.
-2. Add this URL:
-   ```
-   https://github.com/hydraroot/hawh1080addon
-   ```
-3. Close the dialog and refresh the Add-on Store. A new entry
-   **"WH1080 USB Weather Station"** will show up under the added
-   repository.
-4. Click it, then **Install**.
+### Add the repository
 
-This works because the repo root has a `repository.yaml` (repo
-metadata) right next to `config.yaml` and the rest of the add-on
-files — that's the layout the Supervisor expects for a single-add-on
-GitHub repository (no extra subfolder needed).
+1. Open **Settings → Apps**.
+2. Open the **App Store / Install app** section.
+3. Open the **⋮** menu in the top-right corner.
+4. Select **Repositories**.
+5. Add this repository:
 
-To publish an update later, bump `version` in `wh1080_usb/config.yaml`
-(e.g. `"1.0.1"`) and push the commit; Home Assistant will offer the
-update in the Add-on Store like any other add-on.
+```text
+https://github.com/hydraroot/hawh1080addon
+```
 
-### Option B — Manual copy
+6. Add the repository.
+7. Refresh the App store if necessary.
+8. Select **WH1080 USB Weather Station**.
+9. Select **Install**.
 
-Copy this folder to `/addons/wh1080_usb/`.
+Home Assistant's official documentation describes the same process for third-party App repositories.
 
-The WH1080 must show up as `/dev/hidraw0`.
+### Home Assistant OS requirement
 
-Keep Weather Underground disabled at first:
+Home Assistant Apps are available when using the **Home Assistant OS** installation method.
+
+Other Home Assistant installation methods do not provide the same Supervisor/App environment.
+
+## USB device
+
+The WH1080 console must be accessible to the App through:
+
+```text
+/dev/hidraw0
+```
+
+Connect the WH1080 console to the Home Assistant OS machine through USB.
+
+If the App cannot communicate with the station, check the App logs and verify that the USB device is detected correctly.
+
+## First start
+
+For the first test, Weather Underground can be left disabled:
 
 ```yaml
 weather_underground:
   enabled: false
 ```
 
-Start the add-on and check the logs.
+Start the App and check its logs.
+
+Once the WH1080 is communicating correctly and Home Assistant entities are being created through MQTT Discovery, Weather Underground can be enabled if required.
 
 ## MQTT
 
-Requires Mosquitto Broker or an MQTT broker reachable from the
-add-on.
+The App requires an MQTT broker reachable from Home Assistant OS.
 
-By default:
+A typical Home Assistant OS installation using the Mosquitto Broker App can use:
 
 ```yaml
 host: core-mosquitto
 port: 1883
 ```
 
+If the MQTT broker uses different settings, configure the appropriate broker address and port in the App configuration.
+
 ## Weather Underground
 
-The integration is included but disabled by default.
+Weather Underground support is optional and disabled by default.
 
-Don't enable it until you've verified your credentials and the PWS
-update endpoint.
+Before enabling it:
 
-Accumulated rain isn't sent yet as `rainin`, to avoid misinterpreting
-the WH1080's rain counter.
+1. Verify the Weather Underground credentials.
+2. Verify the PWS configuration.
+3. Enable Weather Underground in the App configuration.
+4. Check the App logs for successful updates.
+
+Weather Underground uploads use the units required by its API.
+
+The WH1080 accumulated rainfall counter is not currently sent as an instantaneous `rainin` value because the station's rainfall counter represents accumulated rainfall rather than an instantaneous rate.
+
+## Third-party software
+
+This project uses **pywws**, an open-source Python software package for USB wireless weather stations.
+
+`pywws` provides functionality for communicating with and decoding data from Fine Offset / WH1080-family weather stations. The project is maintained separately from this Home Assistant App.
+
+**pywws project:**
+
+https://github.com/jim-easterbrook/pywws
+
+**pywws license:** GNU General Public License version 2 or later (GPLv2+).
+
+This project adds the Home Assistant integration layer around the weather-station functionality, including:
+
+- Home Assistant App packaging
+- USB device access through `/dev/hidraw0`
+- Configuration handling
+- MQTT Discovery
+- Home Assistant entity publishing
+- Availability handling
+- Reading validation
+- Unit conversion
+- Daily maximum/minimum handling
+- Optional Weather Underground integration
+
+Please refer to the pywws project and its license for the terms applicable to that third-party software.
+
+## Repository structure
+
+The repository is organized as a Home Assistant App repository.
+
+```text
+hawh1080addon/
+├── repository.yaml
+├── wh1080_usb/
+│   ├── config.yaml
+│   ├── Dockerfile
+│   ├── run.sh
+│   ├── wh1080.py
+│   ├── pywws_direct.py
+│   ├── direct_backend.py
+│   └── ...
+├── dev/
+│   ├── requirements-dev.txt
+│   └── test_*.py
+├── LICENSE
+└── README.md
+```
+
+The `wh1080_usb/` directory contains the Home Assistant App itself.
+
+The `dev/` directory contains development and diagnostic material used during development and testing.
+
+## Development notes
+
+The project includes a direct USB backend designed to communicate with the WH1080 console through `/dev/hidraw0`.
+
+The development material includes diagnostic tools and experiments used to investigate the WH1080 USB/HID protocol.
+
+These development files are not required for normal App operation.
+
+## Configuration version
+
+The Home Assistant App version is defined in:
+
+```text
+wh1080_usb/config.yaml
+```
+
+For a new release, update the `version` field in that file.
+
+Example:
+
+```yaml
+version: "1.0.1"
+```
+
+Home Assistant App repositories store each App in its own directory, with the App's `config.yaml` inside that directory.
+
+## Limitations
+
+- The project has currently been tested directly with a Fine Offset WH1080.
+- Compatibility with other WH1080-family models should be confirmed with real hardware.
+- The WH1080 console must be accessible through `/dev/hidraw0`.
+- Weather Underground support is optional.
+- `rain_today` and `rain_rate` are calculated values rather than raw fields directly supplied by the station.
+- Additional hardware testing is welcome.
+
+## Feedback and testing
+
+Testing with additional WH1080-family stations and different Home Assistant OS hardware is welcome.
+
+When reporting a problem, please include:
+
+- Exact weather station model
+- Home Assistant OS hardware
+- Home Assistant OS version
+- Whether the USB console is detected
+- Relevant App log messages
+- Whether MQTT entities were created successfully
+
+## Acknowledgements
+
+Thanks to the developers and contributors of **pywws** for their work on supporting Fine Offset and compatible USB weather stations.
+
+## License
+
+The repository contains third-party software components with their own licensing terms.
+
+In particular, **pywws is licensed under GPLv2 or later (GPLv2+)**.
+
+See the repository's `LICENSE` file and the pywws license for the applicable terms.
